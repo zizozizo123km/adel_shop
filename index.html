@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نظام إدارة المخزون بالباركود</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@ericblade/quagga2@1.2.6/dist/quagga.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    #scanner-container {
+      position: relative;
+      width: 100%;
+      height: 60vh;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+    
+    #scanner-container video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    #scanner-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(transparent 45%, rgba(67, 97, 238, 0.3) 45%, rgba(67, 97, 238, 0.3) 55%, transparent 55%),
+                  linear-gradient(90deg, transparent 45%, rgba(67, 97, 238, 0.3) 45%, rgba(67, 97, 238, 0.3) 55%, transparent 55%);
+      pointer-events: none;
+    }
+    
+    .product-card {
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .product-card:hover {
+      transform: translateY(-5px);
+    }
+    
+    .toast {
+      animation: slideIn 0.3s forwards, fadeOut 0.5s 2.5s forwards;
+    }
+    
+    @keyframes slideIn {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+    
+    @keyframes fadeOut {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+  </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+  <header class="bg-white shadow-sm py-3 px-4">
+    <div class="flex justify-between items-center">
+      <h1 class="text-xl font-bold text-indigo-600">
+        <i class="fas fa-barcode mr-2"></i> ADEL__SHOP
+      </h1>
+      <button id="toggleScannerBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg">
+        <i class="fas fa-camera mr-2"></i> تشغيل الماسح
+      </button>
+      <a href="nh.html">
+      <button class="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition">
+     حساب السلع
+      </button>
+    </a>
+    </div>
+  </header>
+
+  <main class="p-4">
+    <div id="scannerSection" class="mb-6">
+      <div id="scanner-container" class="relative">
+        <div id="scanner-overlay" class="flex items-center justify-center">
+          <div class="text-center text-white bg-black bg-opacity-50 px-4 py-2 rounded-lg">
+            <i class="fas fa-camera text-2xl mb-1"></i>
+            <p>يتم تحميل الماسح الضوئي...</p>
+          </div>
+        </div>
+      </div>
+      
+      <div id="scannerControls" class="flex justify-center mt-4 space-x-3 space-x-reverse">
+        <button id="flashToggle" class="bg-gray-200 text-gray-700 p-2 rounded-full hidden">
+          <i class="fas fa-lightbulb"></i>
+        </button>
+        <button id="switchCamera" class="bg-gray-200 text-gray-700 p-2 rounded-full hidden">
+          <i class="fas fa-sync-alt"></i>
+        </button>
+      </div>
+      
+      <p id="scanResult" class="text-center mt-3 text-gray-600">
+        <span id="resultText">في انتظار مسح الباركود...</span>
+        <span id="scanStatus" class="ml-2"></span>
+      </p>
+    </div>
+    
+    <div id="productCard" class="hidden bg-white rounded-xl shadow-md p-4 mb-6 product-card">
+      <div class="flex justify-between items-start mb-3">
+        <span id="productCategoryBadge" class="bg-indigo-100 text-indigo-800 text-xs font-medium px-2.5 py-0.5 rounded">المنتج</span>
+        <span id="productDate" class="text-gray-500 text-xs"></span>
+      </div>
+      
+      <h3 id="productNameTitle" class="font-bold text-lg mb-2 truncate">اسم المنتج</h3>
+      
+      <div class="flex items-center mb-3">
+        <span id="productBarcode" class="text-gray-500 text-sm">123456789</span>
+        <button id="copyBarcodeBtn" class="mr-2 text-indigo-600">
+          <i class="far fa-copy text-xs"></i>
+        </button>
+      </div>
+      
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <p class="text-gray-500 text-xs">السعر</p>
+          <p id="productPrice" class="font-bold text-indigo-600">0.00 ر.س</p>
+        </div>
+        <div>
+          <p class="text-gray-500 text-xs">المخزون</p>
+          <p id="productQuantity" class="font-bold text-green-600">0</p>
+        </div>
+        </div>
+      
+      <div class="flex justify-between pt-3 border-t border-gray-100">
+        <button id="editProductBtn" class="text-indigo-600 px-4 py-2 rounded-lg border border-indigo-600">
+          <i class="fas fa-edit mr-1"></i> تعديل
+        </button>
+        <button id="newScanBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg">
+          <i class="fas fa-camera mr-1"></i> مسح جديد
+        </button>
+      </div>
+    </div>
+    
+    <div id="productForm" class="hidden bg-white rounded-xl shadow-md p-4 mb-6">
+      <h3 class="text-lg font-semibold text-gray-800 mb-3">
+        <i class="fas fa-edit mr-2"></i> تعديل المنتج
+      </h3>
+      
+      <div class="space-y-3">
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">رقم الباركود</label>
+          <input id="barcodeInput" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" readonly>
+        </div>
+        
+        <div>
+          <label class="block text-sm text-gray-700 mb-1">اسم المنتج</label>
+          <input id="nameInput" type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="اسم المنتج">
+        </div>
+        
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">السعر (ر.س)</label>
+            <input id="priceInput" type="number" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="0.00">
+          </div>
+          <div>
+            <label class="block text-sm text-gray-700 mb-1">الكمية</label>
+            <input id="quantityInput" type="number" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="0">
+          </div>
+        </div>
+        
+        </div>
+      
+      <div class="flex justify-between mt-4">
+        <button id="cancelEditBtn" class="px-4 py-2 border border-gray-300 rounded-lg text-gray-700">
+          <i class="fas fa-times mr-1"></i> إلغاء
+        </button>
+        <button id="saveProductBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg">
+          <i class="fas fa-save mr-1"></i> حفظ التغييرات
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" class="fixed bottom-4 left-4 right-4 mx-auto bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg max-w-md toast hidden">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center">
+        <i class="fas fa-check-circle mr-2"></i>
+        <span id="toastMessage">تم الحفظ بنجاح!</span>
+      </div>
+      <button id="closeToast" class="ml-4">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+  </div>
+
+  <script type="module">
+    // Import Firebase modules
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import { getDatabase, ref, set, get, child } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAmPFwV1ld4H6CWukHtEoKPg9E2tHWkyxE", // REPLACE WITH YOUR ACTUAL API KEY
+      authDomain: "not-b25f1.firebaseapp.com",
+      databaseURL: "https://not-b25f1-default-rtdb.firebaseio.com",
+      projectId: "not-b25f1",
+      storageBucket: "not-b25f1.appspot.com",
+      messagingSenderId: "554877315906",
+      appId: "1:554877315906:web:74a41135fd30c742fd36db",
+      measurementId: "G-P8VFWLT204"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const dbRef = ref(db);
+
+    // DOM Elements
+    const scannerContainer = document.getElementById("scanner-container");
+    const scannerOverlay = document.getElementById("scanner-overlay");
+    const scannerSection = document.getElementById("scannerSection");
+    const toggleScannerBtn = document.getElementById("toggleScannerBtn");
+    const flashToggle = document.getElementById("flashToggle");
+    const switchCamera = document.getElementById("switchCamera");
+    const resultText = document.getElementById("resultText");
+    const scanStatus = document.getElementById("scanStatus");
+    
+    // Product Card Elements
+    const productCard = document.getElementById("productCard");
+    const productCategoryBadge = document.getElementById("productCategoryBadge");
+    const productDate = document.getElementById("productDate"); 
+    const productNameTitle = document.getElementById("productNameTitle");
+    const productBarcode = document.getElementById("productBarcode");
+    const copyBarcodeBtn = document.getElementById("copyBarcodeBtn");
+    const productPrice = document.getElementById("productPrice");
+    const productQuantity = document.getElementById("productQuantity");
+    
+    const editProductBtn = document.getElementById("editProductBtn");
+    const newScanBtn = document.getElementById("newScanBtn");
+    
+    // Product Form Elements
+    const productForm = document.getElementById("productForm");
+    const barcodeInput = document.getElementById("barcodeInput");
+    const nameInput = document.getElementById("nameInput");
+    const priceInput = document.getElementById("priceInput");
+    const quantityInput = document.getElementById("quantityInput");
+    const saveProductBtn = document.getElementById("saveProductBtn");
+    const cancelEditBtn = document.getElementById("cancelEditBtn");
+    
+    // Toast Elements
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toastMessage");
+    const closeToast = document.getElementById("closeToast");
+
+    // Variables
+    let lastCode = null;
+    let quaggaInitialized = false;
+    let scannerActive = false;
+    let currentStream = null;
+    let usingFrontCamera = false;
+    let currentProduct = null; // Stores the currently loaded product data
+
+    // Initialize the app
+    function init() {
+      setupEventListeners();
+      // Start scanner immediately on page load, as per user's request for "تحديث صفحة كي تفتح كميرا"
+      startScanner();
+      toggleScannerBtn.innerHTML = '<i class="fas fa-stop mr-2"></i> إيقاف الماسح';
+    }
+
+    // Set up event listeners
+    function setupEventListeners() {
+      toggleScannerBtn.addEventListener("click", toggleScanner);
+      flashToggle.addEventListener("click", toggleFlash);
+      switchCamera.addEventListener("click", switchCameraView);
+      copyBarcodeBtn.addEventListener("click", copyToClipboard);
+      editProductBtn.addEventListener("click", () => showEditForm(currentProduct.barcode)); 
+      // MODIFICATION: Change newScanBtn to reload the page
+      newScanBtn.addEventListener("click", () => window.location.reload());
+      saveProductBtn.addEventListener("click", saveProduct);
+      cancelEditBtn.addEventListener("click", cancelEdit);
+      closeToast.addEventListener("click", hideToast);
+    }
+
+    // Toggle scanner on/off
+    function toggleScanner() {
+      if (scannerActive) {
+        stopScanner();
+        toggleScannerBtn.innerHTML = '<i class="fas fa-camera mr-2"></i> تشغيل الماسح';
+      } else {
+        startScanner();
+        toggleScannerBtn.innerHTML = '<i class="fas fa-stop mr-2"></i> إيقاف الماسح';
+      }
+    }
+
+    // Start barcode scanner
+    function startScanner() {
+      if (scannerActive) { // Prevent starting if already active
+        return;
+      }
+
+      if (quaggaInitialized) {
+        Quagga.start();
+        scannerActive = true;
+        resultText.textContent = "في انتظار مسح الباركود...";
+        scanStatus.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+        flashToggle.classList.remove("hidden");
+        switchCamera.classList.remove("hidden");
+        // Ensure only scanner section is visible
+        productCard.classList.add("hidden"); 
+        productForm.classList.add("hidden"); 
+        scannerSection.classList.remove("hidden"); 
+        return;
+      }
+
+      Quagga.init({
+        inputStream: {
+          type: "LiveStream",
+          target: scannerContainer,
+          constraints: {
+            facingMode: usingFrontCamera ? "user" : "environment",
+            width: { min: 640 },
+            height: { min: 480 }
+          }
+        },
+        decoder: {
+          // Keep these for better detection, even if we validate for 13 digits later
+          readers: ["ean_reader", "ean_8_reader", "code_128_reader", "code_39_reader", "upc_reader"]
+        },
+        locate: true
+      }, function(err) {
+        if (err) {
+          console.error("Quagga initialization error:", err);
+          showError("خطأ في تشغيل الكاميرا. يرجى التأكد من صلاحيات الوصول.");
+          return;
+        }
+        
+        Quagga.start();
+        quaggaInitialized = true;
+        scannerActive = true;
+        resultText.textContent = "في انتظار مسح الباركود...";
+        scanStatus.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i>';
+        scannerOverlay.style.background = "none"; // Hide the initial loading overlay
+        flashToggle.classList.remove("hidden");
+        switchCamera.classList.remove("hidden");
+        
+        // Get the video stream for flash control
+        // Quagga.camera.getStream() is only available after Quagga.start()
+        // and if it actually got a stream.
+        try {
+          currentStream = Quagga.CameraAccess.getActiveStream(); // Corrected method for getting stream
+        } catch (e) {
+          console.warn("Could not get camera stream for flash control:", e);
+        }
+      });
+    }
+
+    // Stop barcode scanner
+    function stopScanner() {
+      if (quaggaInitialized && scannerActive) {
+        Quagga.stop();
+        scannerActive = false;
+        resultText.textContent = "الماسح متوقف";
+        scanStatus.innerHTML = "";
+        scannerOverlay.style.background = "linear-gradient(transparent 45%, rgba(67, 97, 238, 0.3) 45%, rgba(67, 97, 238, 0.3) 55%, transparent 55%), linear-gradient(90deg, transparent 45%, rgba(67, 97, 238, 0.3) 45%, rgba(67, 97, 238, 0.3) 55%, transparent 55%)";
+        flashToggle.classList.add("hidden");
+        switchCamera.classList.add("hidden");
+        
+        // Turn off flash if it's on
+        if (currentStream && currentStream.getVideoTracks().length > 0) {
+          const track = currentStream.getVideoTracks()[0];
+          if (track.getCapabilities().torch && track.getConstraints().torch) {
+            toggleFlash(true); // Pass true to force turn off
+          }
+        }
+      }
+    }
+
+    // Toggle flash light
+    function toggleFlash(offOnly = false) {
+      if (!currentStream || currentStream.getVideoTracks().length === 0) {
+        showToast("الكاميرا غير متاحة للتحكم بالفلاش.", "warning");
+        return;
+      }
+      
+      const track = currentStream.getVideoTracks()[0];
+      if (!track.getCapabilities().torch) {
+        showToast("هذا الجهاز لا يدعم الفلاش", "warning");
+        return;
+      }
+      
+      const flashOn = track.getConstraints().torch || false;
+      
+      if (offOnly || flashOn) {
+        track.applyConstraints({ torch: false });
+        flashToggle.innerHTML = '<i class="fas fa-lightbulb"></i>';
+      } else {
+        track.applyConstraints({ torch: true });
+        flashToggle.innerHTML = '<i class="fas fa-lightbulb text-yellow-300"></i>';
+      }
+    }
+
+    // Switch between front and back camera
+    function switchCameraView() {
+      usingFrontCamera = !usingFrontCamera;
+      stopScanner();
+      quaggaInitialized = false; // Re-initialize Quagga for new camera stream
+      startScanner();
+    }
+
+    // Handle barcode detection
+    Quagga.onDetected(async (data) => {
+      const code = data.codeResult.code;
+      
+      // MODIFICATION: Add validation for 13 digits AND starting with '6'
+      if (!code || code.length !== 13 || !/^\d+$/.test(code) || !code.startsWith('6')) {
+        showError("باركود غير صالح. يرجى مسح باركود مكون من 13 رقمًا ويبدأ بـ '6'.");
+        scanStatus.innerHTML = '<i class="fas fa-times-circle text-red-500"></i>';
+        lastCode = null; // Reset lastCode to allow re-scanning the same (invalid) code
+        return; // Keep scanner active
+      }
+      // END MODIFICATION
+
+      if (code && code !== lastCode) { 
+        lastCode = code;
+        resultText.textContent = `تم مسح الباركود: ${code}`;
+        scanStatus.innerHTML = '<i class="fas fa-check-circle text-green-500"></i>';
+        
+        // Vibrate if supported
+        if (navigator.vibrate) {
+          navigator.vibrate(200);
+        }
+        
+        // Stop scanner temporarily
+        stopScanner();
+        
+        // Show product card or form
+        await showProductCard(code);
+      }
+    });
+
+    // Show product card with data
+    async function showProductCard(barcode) {
+      try {
+        const snapshot = await get(child(dbRef, `products/${barcode}`));
+        
+        if (snapshot.exists()) {
+          currentProduct = snapshot.val();
+          currentProduct.barcode = barcode; // Ensure barcode is part of currentProduct
+          
+          // Update product card UI with simplified data
+          productNameTitle.textContent = currentProduct.name || "غير معروف";
+          productBarcode.textContent = barcode;
+          productPrice.textContent = currentProduct.price ? currentProduct.price.toFixed(2) + " ر.س" : "0.00 ر.س";
+          productQuantity.textContent = currentProduct.quantity || 0;
+          productQuantity.className = (currentProduct.quantity !== undefined && currentProduct.quantity > 0) ? "font-bold text-green-600" : "font-bold text-red-600";
+          
+          productCategoryBadge.textContent = "المنتج"; // Default label
+          productDate.textContent = ""; 
+          
+          // Show product card and hide others
+          productCard.classList.remove("hidden");
+          scannerSection.classList.add("hidden");
+          productForm.classList.add("hidden"); 
+          
+          showToast("تم تحميل بيانات المنتج");
+        } else {
+          // New product - show form directly for new input
+          showEditForm(barcode);
+          showToast("باركود جديد! يرجى إدخال تفاصيل المنتج.", "info");
+        }
+      } catch (error) {
+        console.error("Error reading from Firebase:", error);
+        showError("حدث خطأ أثناء جلب بيانات المنتج.");
+        newScan(); // Return to scan state on error
+      }
+    }
+
+    // Show edit form
+    function showEditForm(barcode = null) {
+      if (currentProduct && currentProduct.barcode) { // Use currentProduct if available
+        barcodeInput.value = currentProduct.barcode;
+        nameInput.value = currentProduct.name || "";
+        priceInput.value = currentProduct.price || "";
+        quantityInput.value = currentProduct.quantity || 1;
+      } else if (barcode) { // For a new product with just a barcode
+        barcodeInput.value = barcode;
+        nameInput.value = "";
+        priceInput.value = "";
+        quantityInput.value = 1; // Default quantity for new product
+      } else {
+        // Fallback, should not happen if logic is correct
+        console.warn("showEditForm called without a product or barcode.");
+        window.location.reload(); // Reload in case of unexpected state
+        return;
+      }
+      
+      // Show form and hide card/scanner
+      productForm.classList.remove("hidden");
+      productCard.classList.add("hidden");
+      scannerSection.classList.add("hidden");
+      
+      // Focus on name field
+      nameInput.focus();
+    }
+
+    // Save product data
+    async function saveProduct() {
+      const barcode = barcodeInput.value;
+      const name = nameInput.value.trim();
+      const price = parseFloat(priceInput.value);
+      const quantity = parseInt(quantityInput.value);
+      
+      // Validate inputs
+      if (!barcode) {
+        showError("يرجى مسح الباركود أولاً");
+        return;
+      }
+      
+      // MODIFICATION: Additional Validation for 13 digits AND starting with '6' on save
+      if (barcode.length !== 13 || !/^\d+$/.test(barcode) || !barcode.startsWith('6')) {
+          showError("الكود يجب أن يكون 13 رقمًا فقط ويبدأ بـ '6'.");
+          barcodeInput.focus(); 
+          return;
+      }
+      // END MODIFICATION
+
+      if (!name) {
+        showError("يرجى إدخال اسم المنتج.");
+        nameInput.focus();
+        return;
+      }
+      
+      if (isNaN(price) || price < 0) {
+        showError("يرجى إدخال سعر صحيح (رقم موجب).");
+        priceInput.focus();
+        return;
+      }
+      
+      if (isNaN(quantity) || quantity < 0) {
+        showError("يرجى إدخال كمية صحيحة (رقم موجب).");
+        quantityInput.focus();
+        return;
+      }
+      
+      // Prepare product data for Firebase (simplified)
+      const productData = {
+        name,
+        price,
+        quantity
+      };
+      
+      // Save to Firebase
+      try {
+        await set(ref(db, `products/${barcode}`), productData);
+        showToast("تم حفظ المنتج بنجاح!");
+        
+        // Update current product for display and show card
+        currentProduct = { ...productData, barcode: barcode }; // Add barcode back for local use
+        cancelEdit(); // This will show the updated product card
+      } catch (error) {
+        console.error("Error saving to Firebase:", error);
+        showError("حدث خطأ أثناء حفظ المنتج.");
+      }
+    }
+
+    // Cancel edit and return to product card or new scan
+    function cancelEdit() {
+      productForm.classList.add("hidden");
+      
+      if (currentProduct && currentProduct.barcode) { 
+        showProductCard(currentProduct.barcode); // Go back to showing the product card
+      } else {
+        window.location.reload(); // Reload in case of no product data
+      }
+    }
+
+    // Start new scan (now reloads the page)
+    function newScan() {
+      window.location.reload();
+    }
+
+    // Copy text to clipboard
+    function copyToClipboard() {
+      const barcodeToCopy = currentProduct?.barcode || barcodeInput.value;
+      if (barcodeToCopy) {
+        navigator.clipboard.writeText(barcodeToCopy);
+        showToast("تم نسخ الباركود!");
+      } else {
+        showToast("لا يوجد باركود للنسخ.", "warning");
+      }
+    }
+
+    // Show toast notification
+    function showToast(message, type = "success") {
+      toastMessage.textContent = message;
+      
+      if (type === "error") {
+        toast.className = "fixed bottom-4 left-4 right-4 mx-auto px-6 py-3 rounded-lg shadow-lg max-w-md toast bg-red-600";
+      } else if (type === "warning" || type === "info") { 
+        toast.className = "fixed bottom-4 left-4 right-4 mx-auto px-6 py-3 rounded-lg shadow-lg max-w-md toast bg-yellow-600";
+      } else {
+        toast.className = "fixed bottom-4 left-4 right-4 mx-auto px-6 py-3 rounded-lg shadow-lg max-w-md toast bg-green-600";
+      }
+      
+      toast.classList.remove("hidden");
+      
+      clearTimeout(window.toastTimeout);
+      window.toastTimeout = setTimeout(hideToast, 3000);
+    }
+
+    // Hide toast
+    function hideToast() {
+      toast.classList.add("hidden");
+    }
+
+    // Show error message (updates scan result area and shows toast)
+    function showError(message) {
+      resultText.textContent = message;
+      scanStatus.innerHTML = '<i class="fas fa-exclamation-triangle text-red-500"></i>';
+      showToast(message, "error");
+    }
+
+    // Initialize the app when DOM is loaded
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
